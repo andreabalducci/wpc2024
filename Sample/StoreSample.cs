@@ -29,25 +29,35 @@ public class StoreSample
         _persistence = new InMemoryPersistence();
         _streams = new StreamsFactory(_persistence);
     }
-    
+
     [Fact]
-    public async Task Create_and_Dump_Store()
+    public async Task SaleOne()
     {
-        var stream = _streams.Open("WPC");
-        await stream.AppendAsync(new SaleStarted(_timeProvider.GetUtcNow()));
+        var wpc = _streams.Open("WPC");
+        await wpc.AppendAsync(new SaleStarted(_timeProvider.GetUtcNow()));
+        await wpc.AppendAsync(new TicketSold($"T00001", _timeProvider.GetUtcNow()));
+        
+        await Dump();
+    }
+
+    [Fact]
+    public async Task SaleMany()
+    {
+        var wpc = _streams.Open("WPC");
+        await wpc.AppendAsync(new SaleStarted(_timeProvider.GetUtcNow()));
 
         await Parallel.ForAsync(1, TicketCount + 1,
             _parallelOptions,
             async (i, cancellationToken) =>
             {
-                await stream.AppendAsync(new TicketSold($"T{i}", _timeProvider.GetUtcNow()));
+                await wpc.AppendAsync(new TicketSold($"T{i:D5}", _timeProvider.GetUtcNow()));
                 await Task.Delay(_random.Next(10), cancellationToken);
             });
 
-        await stream.AppendAsync(new SaleEnded(_timeProvider.GetUtcNow()));
+        await wpc.AppendAsync(new SaleEnded(_timeProvider.GetUtcNow()));
 
 
-        var sum = await stream.AggregateAsync<SumAsync>();
+        var sum = await wpc.AggregateAsync<SumAsync>();
         _output.WriteLine("Sold {0} tickets in {1}ms", sum.Total, sum.Duration.Milliseconds);
         
         Assert.Equal(TicketCount, sum.Total);
