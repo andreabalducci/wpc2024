@@ -2,6 +2,7 @@ using NStore.Core.InMemory;
 using NStore.Core.Persistence;
 using NStore.Core.Processing;
 using NStore.Core.Streams;
+using NStore.Domain;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -17,6 +18,7 @@ public class StoreSample
     private readonly IStreamsFactory _streams;
     private readonly TimeProvider _timeProvider = TimeProvider.System;
     private readonly Random _random = new();
+    private readonly IRepository _repository;
 
     private readonly ParallelOptions _parallelOptions = new()
     {
@@ -28,6 +30,20 @@ public class StoreSample
         _output = output;
         _persistence = new InMemoryPersistence();
         _streams = new StreamsFactory(_persistence);
+        _repository = new Repository(new DefaultAggregateFactory(), _streams);
+    }
+
+    [Fact]
+    public async Task SaleAggregate()
+    {
+        var wpc = StoreAggregate.CreateNew("WPC");
+        wpc.AddTickets(1);
+        await _repository.SaveAsync(wpc, "init");
+        
+        wpc.SaleTicket("T00001");
+        await _repository.SaveAsync(wpc, Guid.NewGuid().ToString());
+
+        await Dump();
     }
 
     [Fact]
@@ -35,7 +51,7 @@ public class StoreSample
     {
         var wpc = _streams.Open("WPC");
         await wpc.AppendAsync(new SaleStarted(_timeProvider.GetUtcNow()));
-        await wpc.AppendAsync(new TicketSold($"T00001", _timeProvider.GetUtcNow()));
+        await wpc.AppendAsync(new TicketSold("T00001", _timeProvider.GetUtcNow()));
         
         await Dump();
     }
@@ -66,12 +82,17 @@ public class StoreSample
 
     private async Task Dump()
     {
+        _output.WriteLine("====================================");
+
         await _persistence.ReadAllAsync(0, new LambdaSubscription(c =>
         {
             if (c.IsFiller()) return Task.FromResult(true);
 
-            _output.WriteLine($"{c.Payload.GetType().Name} => {c.ToJson()}");
+            _output.WriteLine(c.ToJson());
             return Task.FromResult(true);
         }));
+        
+        
+        _output.WriteLine("====================================");
     }
 }
