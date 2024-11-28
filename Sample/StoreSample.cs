@@ -38,10 +38,8 @@ public class StoreSample
     {
         var wpc = StoreAggregate.CreateNew("WPC");
         wpc.AddTickets(1);
-        await _repository.SaveAsync(wpc, "init");
-        
         wpc.SaleTicket("T00001");
-        await _repository.SaveAsync(wpc, Guid.NewGuid().ToString());
+        await _repository.SaveAsync(wpc, "init");
 
         await Dump();
     }
@@ -59,20 +57,25 @@ public class StoreSample
     [Fact]
     public async Task SaleMany()
     {
+        // lo stream esiste sempre, anche se vuoto
         var wpc = _streams.Open("WPC");
+        
+        // aggiungo un evento iniziale
         await wpc.AppendAsync(new SaleStarted(_timeProvider.GetUtcNow()));
 
+        // apro le vendite dell'evento dell'anno
         await Parallel.ForAsync(1, TicketCount + 1,
             _parallelOptions,
             async (i, cancellationToken) =>
             {
-                await wpc.AppendAsync(new TicketSold($"T{i:D5}", _timeProvider.GetUtcNow()));
                 await Task.Delay(_random.Next(10), cancellationToken);
+                await wpc.AppendAsync(new TicketSold($"T{i:D5}", _timeProvider.GetUtcNow()));
             });
 
+        // chiudo le vendite
         await wpc.AppendAsync(new SaleEnded(_timeProvider.GetUtcNow()));
 
-
+        // Faccio i conti a fine vendita
         var sum = await wpc.AggregateAsync<SumAsync>();
         _output.WriteLine("Sold {0} tickets in {1}ms", sum.Total, sum.Duration.Milliseconds);
         
@@ -86,12 +89,9 @@ public class StoreSample
 
         await _persistence.ReadAllAsync(0, new LambdaSubscription(c =>
         {
-            if (c.IsFiller()) return Task.FromResult(true);
-
-            _output.WriteLine(c.ToJson());
+            _output.WriteLine(c.IsFiller() ? $"{{ -- filler @ {c.Position} -- }}" : c.ToJson());
             return Task.FromResult(true);
         }));
-        
         
         _output.WriteLine("====================================");
     }
