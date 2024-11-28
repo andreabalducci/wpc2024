@@ -10,8 +10,8 @@ namespace Sample;
 
 public class StoreSample
 {
-    private const int MaxDegreeOfParallelism = 16;
-    private const int TicketCount = 10;
+    private const int MaxDegreeOfParallelism = 4;
+    private const int TicketCount = 16;
 
     private readonly ITestOutputHelper _output;
     private readonly IPersistence _persistence;
@@ -34,7 +34,7 @@ public class StoreSample
     }
 
     [Fact]
-    public async Task SaleAggregate()
+    public async Task StoreAggregateSales()
     {
         var wpc = StoreAggregate.CreateNew("WPC");
         wpc.AddTickets(1);
@@ -64,8 +64,7 @@ public class StoreSample
         await wpc.AppendAsync(new SaleStarted(_timeProvider.GetUtcNow()));
 
         // apro le vendite dell'evento dell'anno
-        await Parallel.ForAsync(1, TicketCount + 1,
-            _parallelOptions,
+        await Parallel.ForAsync(1, TicketCount + 1, _parallelOptions,
             async (i, cancellationToken) =>
             {
                 await Task.Delay(_random.Next(10), cancellationToken);
@@ -85,7 +84,7 @@ public class StoreSample
 
     private async Task Dump()
     {
-        _output.WriteLine("====================================");
+        _output.WriteLine("============ EVENTSTORE ============");
 
         await _persistence.ReadAllAsync(0, new LambdaSubscription(c =>
         {
